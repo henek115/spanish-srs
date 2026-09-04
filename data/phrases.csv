@@ -1,0 +1,37 @@
+phrase_ru,phrase_es,distractor1,distractor2,distractor3,topic
+Меня зовут Мария.,Me llamo María.,Te llamas María.,Se llama María.,Nos llamamos María.,Первые шаги
+Сколько тебе лет?,¿Cuántos años tienes?,¿Cuántos años tiene?,¿Cuánto cuesta esto?,¿Dónde vives tú?,Первые шаги
+Я живу в Мадриде.,Vivo en Madrid.,Vives en Madrid.,Vivimos en Madrid.,Viví en Madrid.,Первые шаги
+Это моя семья.,Esta es mi familia.,Esta es tu familia.,Esa es su familia.,Estas son mis familias.,Семья
+У меня есть брат и сестра.,Tengo un hermano y una hermana.,Tengo una hermana y un primo.,Tienes un hermano y una hermana.,Tengo dos hermanos y una hermana.,Семья
+Моя мама работает врачом.,Mi madre trabaja de médica.,Mi padre trabaja de médico.,Mi madre trabaja de profesora.,Mi madre trabajó de médica.,Семья
+Я хочу пить кофе.,Quiero tomar un café.,Quiero tomar un té.,Quiero comer un café.,Quería tomar un café.,Еда
+Ресторан закрыт по понедельникам.,El restaurante está cerrado los lunes.,El restaurante está abierto los lunes.,La tienda está cerrada los lunes.,El restaurante estaba cerrado los lunes.,Еда
+Мне нужны овощи и фрукты.,Necesito verduras y frutas.,Necesito carne y pescado.,Necesito verduras y pan.,Necesitaba verduras y frutas.,Еда
+Дай мне, пожалуйста, счёт.,Tráigame la cuenta, por favor.,Tráigame el menú, por favor.,Tráigame un vaso, por favor.,Tráeme la cuenta, por favor.,Ресторан
+Мой дом рядом с парком.,Mi casa está cerca del parque.,Mi casa está lejos del parque.,Mi trabajo está cerca del parque.,Mi casa estaba cerca del parque.,Дом
+Кухня находится рядом со спальней.,La cocina está al lado del dormitorio.,El baño está al lado del dormitorio.,La cocina está al lado del salón.,La cocina estaba al lado del dormitorio.,Дом
+Я убираю дом по субботам.,Limpio la casa los sábados.,Limpio la casa los domingos.,Limpié la casa los sábados.,Limpiamos la casa los sábados.,Дом
+Автобус приходит каждые десять минут.,El autobús llega cada diez minutos.,El tren llega cada diez minutos.,El autobús llegó cada diez minutos.,El autobús sale cada diez minutos.,Транспорт
+Где находится ближайшая станция метро?,¿Dónde está la estación de metro más cercana?,¿Dónde está la parada de autobús más cercana?,¿Dónde estaba la estación de metro más cercana?,¿Cuándo está la estación de metro más cercana?,Транспорт
+Мне нужно два билета до Барселоны.,Necesito dos billetes a Barcelona.,Necesito un billete a Barcelona.,Necesito dos billetes a Madrid.,Necesitaba dos billetes a Barcelona.,Транспорт
+Я ищу работу на полставки.,Estoy buscando un trabajo de media jornada.,Estoy buscando un trabajo de jornada completa.,Estuve buscando un trabajo de media jornada.,Estoy buscando una casa de media jornada.,Работа
+У меня завтра собеседование.,Mañana tengo una entrevista de trabajo.,Ayer tuve una entrevista de trabajo.,Mañana tengo una reunión de trabajo.,Mañana tienes una entrevista de trabajo.,Работа
+Он работает программистом.,Él trabaja de programador.,Él trabaja de profesor.,Ella trabaja de programadora.,Él trabajó de programador.,Работа
+Мне нужно записаться к врачу.,Necesito pedir cita con el médico.,Necesito pedir cita con el dentista.,Necesité pedir cita con el médico.,Quiero pedir cita con el médico.,Здоровье
+У меня болит голова.,Me duele la cabeza.,Me duele el estómago.,Me dolía la cabeza.,Te duele la cabeza.,Здоровье
+Мне прописали таблетки.,Me recetaron unas pastillas.,Me recetaron un jarabe.,Me recetó unas pastillas.,Te recetaron unas pastillas.,Здоровье
+Сегодня очень холодно.,Hoy hace mucho frío.,Hoy hace mucho calor.,Ayer hizo mucho frío.,Hoy hace mucho viento.,Погода
+Завтра будет дождь.,Mañana va a llover.,Mañana va a nevar.,Ayer llovió.,Hoy va a llover.,Погода
+Мне нравится гулять по городу.,Me gusta pasear por la ciudad.,Me gusta pasear por el parque,Me gustaba pasear por la ciudad.,Te gusta pasear por la ciudad.,Досуг
+По выходным я играю в футбол.,Los fines de semana juego al fútbol.,Los fines de semana juego al baloncesto.,Los fines de semana jugué al fútbol.,Los fines de semana juegas al fútbol.,Досуг
+Я коллекционирую марки.,Colecciono sellos.,Colecciono monedas.,Coleccioné sellos.,Colecciona sellos.,Досуг
+Мне жаль, я опоздал.,Lo siento, llegué tarde.,Lo siento, llegué temprano.,Lo siento, llegaste tarde.,Lo sentí, llegué tarde.,Общество и праздники
+С Новым годом!,¡Feliz Año Nuevo!,¡Feliz cumpleaños!,¡Feliz Navidad!,¡Buen Año Nuevo!,Общество и праздники
+Поздравляю с днём рождения!,¡Feliz cumpleaños!,¡Feliz Año Nuevo!,¡Felices fiestas!,¡Feliz cumpleaño!,Общество и праздники
+Он очень добрый человек.,Él es una persona muy amable.,Él es una persona muy seria.,Ella es una persona muy amable.,Él era una persona muy amable.,Люди
+Она всегда весёлая.,Ella siempre está alegre.,Ella siempre está cansada.,Él siempre está alegre.,Ella siempre estaba alegre.,Люди
+Я немного нервничаю.,Estoy un poco nervioso.,Estoy un poco cansado.,Estaba un poco nervioso.,Estás un poco nervioso.,Люди
+Компьютер не включается.,El ordenador no se enciende.,El ordenador no se apaga.,El teléfono no se enciende.,El ordenador no se encendía.,Работа
+Не забудь отправить письмо.,No olvides enviar el correo.,No olvides enviar el paquete,No olvidaste enviar el correo.,No olvides recibir el correo.,Работа
+Магазин работает до девяти вечера.,La tienda abre hasta las nueve de la noche.,La tienda abre hasta las nueve de la mañana.,La tienda abrió hasta las nueve de la noche.,El restaurante abre hasta las nueve de la noche.,Магазины
