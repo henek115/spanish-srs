@@ -26,12 +26,18 @@ class PhraseReviewFrame(ttk.Frame):
         self.options_frame = ttk.Frame(self)
         self.options_frame.pack(pady=10)
 
-        ttk.Label(self, textvariable=self.feedback_var, font=("Segoe UI", 12)).pack(pady=15)
+        ttk.Label(self, textvariable=self.feedback_var, font=("Segoe UI", 12), wraplength=480, justify="center").pack(pady=15)
+        self.continue_btn = ttk.Button(self, text="Дальше →", command=self.load_next)
         ttk.Button(self, text="← Назад в меню", command=self.on_back).pack(side="bottom", anchor="w")
 
+        # True while feedback is on screen, waiting for the user to move on
+        # themselves - a wrong answer must NOT flash by unread.
+        self.awaiting_continue = False
         self.load_next()
 
     def load_next(self):
+        self.awaiting_continue = False
+        self.continue_btn.pack_forget()
         self.feedback_var.set("")
         for b in self.option_buttons:
             b.destroy()
@@ -67,7 +73,19 @@ class PhraseReviewFrame(ttk.Frame):
         if correct:
             self.feedback_var.set("✓ Верно!")
         else:
-            self.feedback_var.set(f"✗ Правильный ответ: {self.current_phrase['phrase_es']}")
+            self.feedback_var.set(
+                f"✗ Правильный ответ: {self.current_phrase['phrase_es']}"
+                f"\nНажми «Дальше», когда посмотришь."
+            )
         for b in self.option_buttons:
             b.configure(state="disabled")
-        self.after(1400, self.load_next)
+
+        self.awaiting_continue = True
+        self.continue_btn.pack(pady=5)
+        self.continue_btn.focus_set()
+        if correct:
+            self.after(900, self._auto_continue)
+
+    def _auto_continue(self):
+        if self.awaiting_continue:
+            self.load_next()

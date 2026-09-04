@@ -28,20 +28,30 @@ class WordReviewFrame(ttk.Frame):
 
         self.answer_entry = ttk.Entry(self, font=("Segoe UI", 14), width=30)
         self.answer_entry.pack(pady=5)
-        self.answer_entry.bind("<Return>", lambda e: self.submit())
+        self.answer_entry.bind("<Return>", lambda e: self.on_primary_action())
 
         btn_row = ttk.Frame(self)
         btn_row.pack(pady=10)
-        ttk.Button(btn_row, text="Проверить", command=self.submit).pack(side="left", padx=5)
-        ttk.Button(btn_row, text="Не знаю / пропустить", command=self.skip).pack(side="left", padx=5)
+        self.check_btn = ttk.Button(btn_row, text="Проверить", command=self.on_primary_action)
+        self.check_btn.pack(side="left", padx=5)
+        self.check_btn.bind("<Return>", lambda e: self.on_primary_action())
+        self.skip_btn = ttk.Button(btn_row, text="Не знаю / пропустить", command=self.skip)
+        self.skip_btn.pack(side="left", padx=5)
 
-        ttk.Label(self, textvariable=self.feedback_var, font=("Segoe UI", 12)).pack(pady=15)
+        ttk.Label(self, textvariable=self.feedback_var, font=("Segoe UI", 12), wraplength=480, justify="center").pack(pady=15)
 
         ttk.Button(self, text="← Назад в меню", command=self.on_back).pack(side="bottom", anchor="w")
 
+        # True while feedback is on screen and we're waiting for the user to
+        # move on themselves (Enter / "Дальше →") instead of auto-advancing -
+        # a wrong answer must NOT flash by, there has to be time to read it.
+        self.awaiting_continue = False
         self.load_next()
 
     def load_next(self):
+        self.awaiting_continue = False
+        self.check_btn.configure(text="Проверить", command=self.on_primary_action)
+        self.skip_btn.configure(state="normal")
         self.feedback_var.set("")
         self.answer_entry.delete(0, tk.END)
         summary = deck.daily_progress_summary(self.conn)
@@ -74,6 +84,30 @@ class WordReviewFrame(ttk.Frame):
         self.status_var.set(status_note)
         self.answer_entry.focus_set()
 
+    def on_primary_action(self):
+        """The one button (and Enter key) does double duty: check the answer,
+        or - once feedback is showing - move on to the next word."""
+        if self.awaiting_continue:
+            self.load_next()
+        else:
+            self.submit()
+
+    def _show_feedback_and_wait(self, *, auto_advance: bool):
+        """Freeze the screen on the feedback, and switch the primary button
+        into a "Дальше →" continue button. Only a correct answer gets a
+        short auto-advance timer - a wrong one waits for the user."""
+        self.answer_entry.configure(state="disabled")
+        self.skip_btn.configure(state="disabled")
+        self.awaiting_continue = True
+        self.check_btn.configure(text="Дальше →", command=self.on_primary_action)
+        self.check_btn.focus_set()
+        if auto_advance:
+            self.after(900, self._auto_continue)
+
+    def _auto_continue(self):
+        if self.awaiting_continue:
+            self.load_next()
+
     def submit(self):
         if self.current_word is None:
             return
@@ -100,9 +134,11 @@ class WordReviewFrame(ttk.Frame):
         if result.correct:
             self.feedback_var.set(f"✓ Верно ({result.accuracy_pct}% совпадение)")
         else:
-            self.feedback_var.set(f"✗ Правильный ответ: {result.best_expected}  ({result.accuracy_pct}% совпадение)")
-
-        self.after(1400, self.load_next)
+            self.feedback_var.set(
+                f"✗ Правильный ответ: {result.best_expected}  (твой ответ совпал на {result.accuracy_pct}%)"
+                f"\nНажми Enter или «Дальше», когда посмотришь."
+            )
+        self._show_feedback_and_wait(auto_advance=result.correct)
 
     def skip(self):
         if self.current_word is None:
@@ -119,5 +155,5 @@ class WordReviewFrame(ttk.Frame):
             self.current_word["word_es"] if self.current_direction == "ru_to_es"
             else self.current_word["translation_ru"]
         )
-        self.feedback_var.set(f"Правильный ответ: {expected}")
-        self.after(1400, self.load_next)
+        self.feedback_var.set(f"Правильный ответ: {expected}\nНажми Enter или «Дальше», когда посмотришь.")
+        self._show_feedback_and_wait(auto_advance=False)
