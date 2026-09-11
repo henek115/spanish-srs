@@ -1,7 +1,3 @@
-/* Тёмно-синяя тема (тот же дизайн, что был в tkinter-версии) - здесь она
-   просто "бесплатная": шрифты и цвета не масштабируются вручную, всё через
-   стандартные CSS-единицы, которые браузер сам подгоняет под DPI/экран. */
-
 @font-face {
   font-family: "Unbounded";
   src: url("../../assets/fonts/Unbounded-Bold.ttf") format("truetype");
@@ -27,6 +23,24 @@
   src: url("../../assets/fonts/Manrope-Bold.ttf") format("truetype");
   font-weight: 700;
 }
+@font-face {
+  font-family: "Kitsch";
+  src: url("../../assets/fonts/Kitsch-Regular-TRIAL.ttf") format("truetype");
+  font-weight: 400;
+  unicode-range: U+0-2F, U+3A-10FFFF;
+}
+@font-face {
+  font-family: "Kitsch";
+  src: url("../../assets/fonts/Kitsch-Semibold-TRIAL.ttf") format("truetype");
+  font-weight: 600;
+  unicode-range: U+0-2F, U+3A-10FFFF;
+}
+@font-face {
+  font-family: "Kitsch";
+  src: url("../../assets/fonts/Kitsch-Bold-TRIAL.ttf") format("truetype");
+  font-weight: 700;
+  unicode-range: U+0-2F, U+3A-10FFFF;
+}
 
 :root {
   --bg: #0a0f1e;
@@ -41,13 +55,9 @@
   --danger: #fb7185;
   --shadow: #060911;
 
-  --font-heading: "Unbounded", "Segoe UI", sans-serif;
-  --font-body: "Manrope", "Segoe UI", sans-serif;
+  --font-heading: "Kitsch", "Unbounded", "Segoe UI", sans-serif;
+  --font-body: "Kitsch", "Manrope", "Segoe UI", sans-serif;
 
-  /* Базовый масштаб UI - один множитель для всех rem-размеров, так
-     появляется общая "плотность" интерфейса, которую легко подвинуть под
-     очень маленькие/большие окна через пару media-запросов ниже, вместо
-     трогания каждого элемента отдельно. */
   font-size: 16px;
 }
 
@@ -56,11 +66,6 @@
 html, body {
   margin: 0;
   height: 100%;
-  /* Прокручивается только .content (см. components.css) - шапка и нижняя
-     навигация всегда остаются на месте, как в настоящем приложении, а не
-     уезжают вместе со страницей. Без этого #app просто рос бы по высоте
-     контента и .content{overflow-y:auto} никогда бы не срабатывал (не от
-     чего было переполняться), а скроллилась бы вся страница целиком. */
   overflow: hidden;
   background: var(--bg);
   color: var(--text);
@@ -70,11 +75,21 @@ html, body {
 
 #app {
   height: 100vh;
-  height: 100dvh; /* учитывает панели браузера на телефоне (Safari/Chrome) */
+  height: 100dvh; /*(Safari/Chrome)*/
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   overflow: hidden;
+  background: var(--section-bg);
+  transition: background 0.25s;
 }
+
+/* ------------------------------------------------------------------ */
+#app[data-section="menu"]            { --section-bg: #09260f; }
+#app[data-section="placement-intro"] { --section-bg: #121027; }
+#app[data-section="achievements"]    { --section-bg: #1e3227; }
+#app[data-section="stats"]           { --section-bg: #2c0d24; }
+#app[data-section="home"] { --section-bg: #16301f; }
+/* ------------------------------------------------------------------ */
 
 h1, h2, h3 {
   font-family: var(--font-heading);
@@ -101,10 +116,6 @@ input {
   flex-shrink: 0;
 }
 .icon svg { width: 100%; height: 100%; display: block; }
-
-/* Узкое окно (телефон/маленький ресайз) - несколько мест становятся
-   компактнее вместо обрезания, именно то, чего не было в фиксированной
-   640x520 tkinter-раскладке. */
 @media (max-width: 480px) {
   :root { font-size: 15px; }
 }
