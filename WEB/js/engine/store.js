@@ -1,22 +1,28 @@
-// Хранилище прогресса + подбор следующей карточки - порт app/deck.py и
-// app/db.py (настройки, дневной лимит) поверх localStorage вместо SQLite.
-// Сама колода (слова/фразы) - статичные данные из data/*-data.js, прогресс
-// по каждому слову/фразе (статус, интервал, флаг "в приоритете" и т.д.)
-// хранится отдельно и объединяется на лету - так же будет проще потом
-// перенести именно прогресс (а не всю колоду) в Firestore для синка.
-
 import { WORDS } from "../../data/words-data.js";
 import { PHRASES } from "../../data/phrases-data.js";
 import { reviewCard, STARTING_EASE } from "./srs.js";
 import { CATALOG } from "./achievements.js";
+import { normalize } from "./matching.js";
+import { verbsInText } from "./mimicry.js";
+import { TEXTS } from "../../data/texts-data.js";
+import { WORD_LEVEL_BY_LEMMA } from "../../data/word-frequency-data.js";
+import { CUSTOM_WORD_CATEGORY } from "../categories.js";
 
 const LS_KEY = "spanish-srs-progress-v1";
 const LEVEL_ORDER = { A1: 0, A2: 1, B1: 2, B2: 3, C1: 4 };
 const DUE_STATUSES = ["начато", "в процессе", "требует проверки", "изучено"];
 export const STATUSES = ["неизвестно", "начато", "в процессе", "требует проверки", "изучено"];
 
-const WORDS_BY_ID = new Map(WORDS.map((w) => [w.id, w]));
-const PHRASES_BY_ID = new Map(PHRASES.map((p) => [p.id, p]));
+// ALL_WORDS/ALL_PHRASES = встроенная колода (WORDS/PHRASES из data/) + слова
+// и фразы, добавленные пользователем вручную (state.customWords/customPhrases,
+// см. addCustomWords/addCustomPhrases ниже). Везде по файлу, где раньше было
+// обращение напрямую к WORDS/PHRASES, теперь ALL_WORDS/ALL_PHRASES - чтобы
+// добавленные слова сразу участвовали в подборе карточек, поиске, темах и т.д.
+let ALL_WORDS = WORDS;
+let ALL_PHRASES = PHRASES;
+let WORDS_BY_ID = new Map(ALL_WORDS.map((w) => [w.id, w]));
+let PHRASES_BY_ID = new Map(ALL_PHRASES.map((p) => [p.id, p]));
+let wordEsIndex = null; // кэш для поиска глаголов "Имитации" - объявлен здесь, а не ниже, потому что rebuildWordPool() (вызывается сразу же) уже обращается к нему
 
 function today() {
   return new Date().toISOString().slice(0, 10);
@@ -26,6 +32,9 @@ function defaultProgress() {
   return {
     words: {},
     phrases: {},
+    customWords: [],
+    customPhrases: [],
+    customIdSeq: 0,
     settings: {
       dailyNewLimit: 10,
       treeColor: "#3fae6a",
@@ -36,6 +45,12 @@ function defaultProgress() {
     },
     dailyProgress: {},
     earnedAchievements: [],
+    // Метка времени последнего реального изменения - используется облачной
+    // синхронизацией (см. firebase-bridge.js), чтобы решать, какая версия
+    // прогресса новее (это устройство или облако) при входе в аккаунт.
+    // 0 у пустого/нового профиля - значит настоящие данные из облака всегда
+    // "новее" пустого устройства и подтягиваются без вопросов.
+    updatedAt: 0,
   };
 }
 
@@ -49,6 +64,8 @@ function loadState() {
       ...d,
       ...parsed,
       settings: { ...d.settings, ...(parsed.settings || {}) },
+      customWords: parsed.customWords || [],
+      customPhrases: parsed.customPhrases || [],
     };
   } catch (e) {
     console.warn("не удалось прочитать сохранённый прогресс, начинаю заново", e);
@@ -59,9 +76,190 @@ function loadState() {
 let state = loadState();
 let saveTimer = null;
 
+// --- подписка на изменения (для облачной синхронизации) --------------------
+// firebase-bridge.js (отдельный модуль, не через esbuild-бандл) подписывается
+// сюда, чтобы узнавать о каждом реальном изменении прогресса и решать, нужно
+// ли что-то отправить в облако. store.js ничего не знает про Firebase - это
+// сделано специально, чтобы движок оставался независимым и тестируемым.
+let changeListeners = [];
+export function onStateChange(fn) {
+  changeListeners.push(fn);
+  return () => {
+    changeListeners = changeListeners.filter((f) => f !== fn);
+  };
+}
+function notifyChange() {
+  for (const fn of changeListeners) {
+    try {
+      fn();
+    } catch (e) {
+      console.warn("слушатель onStateChange упал", e);
+    }
+  }
+}
+
+// --- добавленные пользователем слова/фразы ---------------------------------
+
+function rebuildWordPool() {
+  ALL_WORDS = WORDS.concat(state.customWords);
+  WORDS_BY_ID = new Map(ALL_WORDS.map((w) => [w.id, w]));
+  wordEsIndex = null; // кэш поиска глаголов для "Имитации" - сбрасываем, вдруг там теперь есть новые слова
+}
+function rebuildPhrasePool() {
+  ALL_PHRASES = PHRASES.concat(state.customPhrases);
+  PHRASES_BY_ID = new Map(ALL_PHRASES.map((p) => [p.id, p]));
+}
+rebuildWordPool();
+rebuildPhrasePool();
+
+function nextCustomId(prefix) {
+  state.customIdSeq = (state.customIdSeq || 0) + 1;
+  return `${prefix}-${state.customIdSeq}`;
+}
+
+// --- автоопределение уровня и темы для слов, добавленных вручную ----------
+//
+// Уровень: приблизительно, по частоте слова в реальных испанских текстах
+// (WORD_LEVEL_BY_LEMMA - см. data/word-frequency-data.js). Не настоящий
+// CEFR-словарь (такого бесплатного нет), просто чем чаще слово встречается,
+// тем ниже уровень. Работает только для одиночных слов в словарной форме -
+// спряжённая форма глагола или фраза просто не найдётся в списке, и уровень
+// останется пустым, как раньше.
+//
+// Тема: без нейросетей/embeddings (это тяжело для лёгкого офлайн-приложения -
+// см. обсуждение) - вместо этого сравниваем слова в переводе нового слова со
+// словами в переводах уже встроенных слов по темам. Тема, слова которой
+// чаще всего встречаются в переводе нового слова, и побеждает. Если ничего
+// не совпало - слово остаётся в "Мои слова", как раньше.
+
+function tokenizeTranslation(text) {
+  return (text.toLowerCase().match(/[a-zа-яёñáéíóúü]+/gi) || []).filter((t) => t.length > 2);
+}
+
+let translationCategoryIndex = null; // token -> Map(category -> count)
+
+function buildTranslationCategoryIndex() {
+  translationCategoryIndex = new Map();
+  // Намеренно WORDS (встроенная колода), а не ALL_WORDS - иначе один раз
+  // угаданная (возможно неверно) тема начала бы усиливать сама себя.
+  for (const w of WORDS) {
+    const text = wordTranslation(w);
+    if (!text) continue;
+    for (const tok of tokenizeTranslation(text)) {
+      let byCat = translationCategoryIndex.get(tok);
+      if (!byCat) {
+        byCat = new Map();
+        translationCategoryIndex.set(tok, byCat);
+      }
+      byCat.set(w.category, (byCat.get(w.category) || 0) + 1);
+    }
+  }
+}
+
+export function guessCategoryForTranslation(text) {
+  if (!translationCategoryIndex) buildTranslationCategoryIndex();
+  const scores = new Map();
+  for (const tok of tokenizeTranslation(text || "")) {
+    const byCat = translationCategoryIndex.get(tok);
+    if (!byCat) continue;
+    for (const [cat, count] of byCat) scores.set(cat, (scores.get(cat) || 0) + count);
+  }
+  let best = null;
+  let bestScore = 0;
+  for (const [cat, score] of scores) {
+    if (score > bestScore) {
+      best = cat;
+      bestScore = score;
+    }
+  }
+  return best;
+}
+
+function guessLevelForWord(wordEs) {
+  return WORD_LEVEL_BY_LEMMA[wordEs.trim().toLowerCase()] || "";
+}
+
+// lang: "ru" | "en" - на каком языке translation в этих rows. Слово всегда
+// хранит оба поля (translation_ru/translation_en), но заполняется только
+// то, что реально ввели - второе остаётся пустой строкой. wordTranslation()
+// ниже сама выбирает, какое из них показывать, так что весь остальной код
+// (поиск, экран повторения, карточки) не хардкодит русский.
+export function addCustomWords(rows, lang = "ru") {
+  const created = [];
+  for (const { word_es, translation } of rows || []) {
+    const es = (word_es || "").trim();
+    const tr = (translation || "").trim();
+    if (!es || !tr) continue;
+    const row = {
+      id: nextCustomId("w"),
+      word_es: es,
+      translation_ru: lang === "ru" ? tr : "",
+      translation_en: lang === "en" ? tr : "",
+      category: guessCategoryForTranslation(tr) || CUSTOM_WORD_CATEGORY,
+      level: guessLevelForWord(es),
+    };
+    state.customWords.push(row);
+    created.push(row);
+  }
+  if (created.length) {
+    rebuildWordPool();
+    save();
+  }
+  return created.map((r) => getWord(r.id));
+}
+
+// Достаёт перевод слова независимо от того, на русском он или на английском
+// - именно эта функция решает, какое поле показать, вместо того чтобы
+// каждый экран сам лез в translation_ru.
+export function wordTranslation(word) {
+  return word.translation_ru || word.translation_en || "";
+}
+export function wordTranslationLang(word) {
+  if (word.translation_ru) return "ru";
+  if (word.translation_en) return "en";
+  return "ru";
+}
+export function phraseTranslation(phrase) {
+  return phrase.phrase_ru || phrase.phrase_en || "";
+}
+
+function pickDistractors(excludeEs, count = 3) {
+  const pool = ALL_PHRASES.filter((p) => p.phrase_es !== excludeEs).map((p) => p.phrase_es);
+  for (let i = pool.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [pool[i], pool[j]] = [pool[j], pool[i]];
+  }
+  return pool.slice(0, count);
+}
+
+export function addCustomPhrases(rows, lang = "ru") {
+  const created = [];
+  for (const { phrase_es, translation } of rows || []) {
+    const es = (phrase_es || "").trim();
+    const tr = (translation || "").trim();
+    if (!es || !tr) continue;
+    const [d1, d2, d3] = pickDistractors(es);
+    const row = {
+      id: nextCustomId("p"),
+      phrase_es: es,
+      phrase_ru: lang === "ru" ? tr : "",
+      phrase_en: lang === "en" ? tr : "",
+      distractor1: d1 || es,
+      distractor2: d2 || es,
+      distractor3: d3 || es,
+    };
+    state.customPhrases.push(row);
+    created.push(row);
+  }
+  if (created.length) {
+    rebuildPhrasePool();
+    save();
+  }
+  return created.map((r) => getPhrase(r.id));
+}
+
 function save() {
-  // Небольшой дебаунс: во время быстрого набора ответов не пишем в
-  // localStorage на каждый keypress, только на реальные события SRS.
+  state.updatedAt = Date.now();
   if (saveTimer) clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
     try {
@@ -69,6 +267,7 @@ function save() {
     } catch (e) {
       console.warn("не удалось сохранить прогресс", e);
     }
+    notifyChange();
   }, 50);
 }
 
@@ -79,6 +278,38 @@ export function flushSave() {
   } catch (e) {
     console.warn("не удалось сохранить прогресс", e);
   }
+  notifyChange();
+}
+
+// --- экспорт/импорт всего прогресса (для облачной синхронизации) -----------
+
+// Возвращает независимую копию всего прогресса - ровно то, что лежит в
+// localStorage под LS_KEY. Именно этот объект целиком улетает в Firestore.
+export function exportState() {
+  return JSON.parse(JSON.stringify(state));
+}
+
+// Полностью заменяет текущий прогресс присланным (из облака). Используется
+// только синхронизацией - НЕ бьёт state.updatedAt заново (сохраняет значение
+// из присланных данных), чтобы не создавать иллюзию, будто локальные данные
+// только что изменились.
+export function importState(newState) {
+  const d = defaultProgress();
+  state = {
+    ...d,
+    ...newState,
+    settings: { ...d.settings, ...((newState && newState.settings) || {}) },
+    customWords: (newState && newState.customWords) || [],
+    customPhrases: (newState && newState.customPhrases) || [],
+  };
+  rebuildWordPool();
+  rebuildPhrasePool();
+  try {
+    localStorage.setItem(LS_KEY, JSON.stringify(state));
+  } catch (e) {
+    console.warn("не удалось сохранить прогресс после синхронизации", e);
+  }
+  notifyChange();
 }
 
 function blankCardProgress() {
@@ -150,6 +381,19 @@ export function dailyProgressSummary() {
   };
 }
 
+export function todayGoalOverview() {
+  const now = Date.now();
+  let dueCount = 0;
+  for (const w of ALL_WORDS) {
+    const p = wordProgress(w.id);
+    if (DUE_STATUSES.includes(p.status) && p.dueAt != null && p.dueAt <= now) dueCount += 1;
+  }
+  const summary = dailyProgressSummary();
+  const total = dueCount + summary.newWordsRemaining;
+  const done = Math.min(summary.totalCount, total);
+  return { total, done, remaining: Math.max(0, total - done) };
+}
+
 // --- подбор следующего слова -----------------------------------------------
 
 function cmpKey(a, b) {
@@ -162,7 +406,7 @@ function cmpKey(a, b) {
 }
 
 function pickNewWord() {
-  const candidates = WORDS.filter((w) => wordProgress(w.id).status === "неизвестно");
+  const candidates = ALL_WORDS.filter((w) => wordProgress(w.id).status === "неизвестно");
   if (!candidates.length) return null;
 
   const placementIdx = LEVEL_ORDER[state.settings.placementLevel];
@@ -193,7 +437,7 @@ export function nextWord() {
   const now = Date.now();
   let due = null;
   let dueAt = Infinity;
-  for (const w of WORDS) {
+  for (const w of ALL_WORDS) {
     const p = wordProgress(w.id);
     if (DUE_STATUSES.includes(p.status) && p.dueAt != null && p.dueAt <= now && p.dueAt < dueAt) {
       due = w;
@@ -219,7 +463,7 @@ export function nextPhrase() {
   const now = Date.now();
   let due = null;
   let dueAt = Infinity;
-  for (const ph of PHRASES) {
+  for (const ph of ALL_PHRASES) {
     const p = phraseProgress(ph.id);
     if (DUE_STATUSES.includes(p.status) && p.dueAt != null && p.dueAt <= now && p.dueAt < dueAt) {
       due = ph;
@@ -228,7 +472,7 @@ export function nextPhrase() {
   }
   if (due) return getPhrase(due.id);
 
-  const candidates = PHRASES.filter((ph) => phraseProgress(ph.id).status === "неизвестно");
+  const candidates = ALL_PHRASES.filter((ph) => phraseProgress(ph.id).status === "неизвестно");
   if (candidates.length) {
     const candidate = candidates[Math.floor(Math.random() * candidates.length)];
     const p = phraseProgress(candidate.id);
@@ -244,10 +488,43 @@ export function setStarred(wordId, starred) {
   wordProgress(wordId).starred = starred;
   save();
 }
+export function setPhraseStarred(phraseId, starred) {
+  phraseProgress(phraseId).starred = starred;
+  save();
+}
+
+// Слова/фразы, добавленные вручную, получают id вида "w-1"/"p-1"
+// (см. nextCustomId выше) — у встроенных всегда числовой id, так что этой
+// проверки достаточно, чтобы нигде случайно не дать удалить родную колоду.
+export function isCustomWordId(id) {
+  return typeof id === "string" && id.startsWith("w-");
+}
+export function isCustomPhraseId(id) {
+  return typeof id === "string" && id.startsWith("p-");
+}
+
+export function removeCustomWord(id) {
+  const idx = state.customWords.findIndex((w) => w.id === id);
+  if (idx === -1) return false;
+  state.customWords.splice(idx, 1);
+  delete state.words[id];
+  rebuildWordPool();
+  save();
+  return true;
+}
+export function removeCustomPhrase(id) {
+  const idx = state.customPhrases.findIndex((p) => p.id === id);
+  if (idx === -1) return false;
+  state.customPhrases.splice(idx, 1);
+  delete state.phrases[id];
+  rebuildPhrasePool();
+  save();
+  return true;
+}
 
 export function topicsOverview() {
   const byCat = new Map();
-  for (const w of WORDS) {
+  for (const w of ALL_WORDS) {
     const e = byCat.get(w.category) || { category: w.category, total: 0, learned: 0, starredCount: 0 };
     e.total += 1;
     const p = wordProgress(w.id);
@@ -258,8 +535,13 @@ export function topicsOverview() {
   return [...byCat.values()].sort((a, b) => a.category.localeCompare(b.category, "ru"));
 }
 
-export function wordsInCategory(category, limit = 400) {
-  return WORDS.filter((w) => w.category === category)
+// Лимит был 400 - незаметно, пока все темы были маленькие (до полной
+// пересборки колоды на частотном списке). Теперь "Базовые слова" разрослась
+// до 12000+ слов, и с сортировкой по уровню (см. ниже) старый лимит обрезал
+// список ДО того, как дело доходило до A2-C1 - в теме были видны только
+// слова уровня A1. Подняла лимит с большим запасом на будущее.
+export function wordsInCategory(category, limit = 20000) {
+  return ALL_WORDS.filter((w) => w.category === category)
     .map((w) => getWord(w.id))
     .sort((a, b) => {
       if (a.starred !== b.starred) return a.starred ? -1 : 1;
@@ -273,8 +555,11 @@ export function wordsInCategory(category, limit = 400) {
 export function searchWords(query, limit = 80) {
   const q = query.trim().toLowerCase();
   if (!q) return [];
-  return WORDS.filter(
-    (w) => w.word_es.toLowerCase().includes(q) || w.translation_ru.toLowerCase().includes(q)
+  return ALL_WORDS.filter(
+    (w) =>
+      w.word_es.toLowerCase().includes(q) ||
+      w.translation_ru.toLowerCase().includes(q) ||
+      (w.translation_en || "").toLowerCase().includes(q)
   )
     .map((w) => getWord(w.id))
     .sort((a, b) => {
@@ -301,7 +586,7 @@ export function phraseOptions(phraseRow) {
 }
 
 export function statusCounts(kind) {
-  const rows = kind === "phrases" ? PHRASES : WORDS;
+  const rows = kind === "phrases" ? ALL_PHRASES : ALL_WORDS;
   const prog = kind === "phrases" ? phraseProgress : wordProgress;
   const counts = Object.fromEntries(STATUSES.map((s) => [s, 0]));
   for (const r of rows) counts[prog(r.id).status] += 1;
@@ -361,7 +646,7 @@ export function currentStreakDays() {
 
 function levelPct() {
   const totals = {};
-  for (const w of WORDS) {
+  for (const w of ALL_WORDS) {
     if (!w.level) continue;
     const e = (totals[w.level] ||= { total: 0, learned: 0 });
     e.total += 1;
@@ -374,7 +659,7 @@ function levelPct() {
 
 function topicPct() {
   const totals = {};
-  for (const w of WORDS) {
+  for (const w of ALL_WORDS) {
     const e = (totals[w.category] ||= { total: 0, learned: 0 });
     e.total += 1;
     if (wordProgress(w.id).status === "изучено") e.learned += 1;
@@ -387,10 +672,10 @@ function topicPct() {
 export function buildAchievementContext() {
   return {
     streakDays: currentStreakDays(),
-    wordsLearned: WORDS.filter((w) => wordProgress(w.id).status === "изучено").length,
-    phrasesLearned: PHRASES.filter((p) => phraseProgress(p.id).status === "изучено").length,
-    phrasesTotal: Math.max(1, PHRASES.length),
-    starredCount: WORDS.filter((w) => wordProgress(w.id).starred).length,
+    wordsLearned: ALL_WORDS.filter((w) => wordProgress(w.id).status === "изучено").length,
+    phrasesLearned: ALL_PHRASES.filter((p) => phraseProgress(p.id).status === "изучено").length,
+    phrasesTotal: Math.max(1, ALL_PHRASES.length),
+    starredCount: ALL_WORDS.filter((w) => wordProgress(w.id).starred).length,
     earnedCount: state.earnedAchievements.length,
     placementDone: !!state.settings.placementLevel,
     levelPct: levelPct(),
@@ -440,17 +725,74 @@ export function setTreeSettings({ treeColor, fruitColor, fruitShape }) {
 export function getPlacementInfo() {
   return { level: state.settings.placementLevel, completedAt: state.settings.placementCompletedAt };
 }
-export function savePlacementResult(result) {
+
+const PLACEMENT_KNOWN_THRESHOLD = 85;
+const PLACEMENT_VERIFY_DELAY_MS = 3 * 24 * 60 * 60 * 1000;
+
+function applyPlacementAnswers(answers) {
+  const now = Date.now();
+  for (const a of answers || []) {
+    if (a.score < PLACEMENT_KNOWN_THRESHOLD) continue;
+    const p = wordProgress(a.wordId);
+    if (p.status !== "неизвестно" && p.status !== "начато") continue; // не трогаем то, что уже дальше по прогрессу
+    p.status = "изучено";
+    p.dueAt = now + PLACEMENT_VERIFY_DELAY_MS;
+    p.easeFactor = STARTING_EASE;
+    p.correctStreakVerify = 0;
+  }
+}
+
+export function savePlacementResult(result, answers) {
   state.settings.placementLevel = result.level;
   state.settings.placementCompletedAt = new Date().toISOString();
+  applyPlacementAnswers(answers);
   save();
 }
 
 export function allWords() {
-  return WORDS;
+  return ALL_WORDS;
 }
 export function allPhrases() {
-  return PHRASES;
+  return ALL_PHRASES;
+}
+
+// --- режим "Имитация" (тексты с пропущенными глаголами) ------------------
+
+function wordEsLookup() {
+  if (!wordEsIndex) {
+    wordEsIndex = new Map();
+    for (const w of ALL_WORDS) wordEsIndex.set(normalize(w.word_es), w.id);
+  }
+  return wordEsIndex;
+}
+
+const FORCE_UNLOCK_IDS = [1];
+
+export function mimicryTextsOverview() {
+  const lookup = wordEsLookup();
+  return TEXTS.map((t) => {
+    const verbs = verbsInText(t.raw);
+    let learnedCount = 0;
+    const missingVerbs = [];
+    for (const v of verbs) {
+      const id = lookup.get(normalize(v));
+      const learned = id != null && wordProgress(id).status === "изучено";
+      if (learned) learnedCount += 1;
+      else missingVerbs.push(v);
+    }
+    return {
+      id: t.id,
+      title: t.title,
+      verbsTotal: verbs.length,
+      verbsLearned: learnedCount,
+      unlocked: verbs.length > 0 && missingVerbs.length === 0 || FORCE_UNLOCK_IDS.includes(t.id),
+      missingVerbs,
+    };
+  });
+}
+
+export function getMimicryText(id) {
+  return TEXTS.find((t) => t.id === id) || null;
 }
 
 // Только для отладки/тестов: сброс всего прогресса.
