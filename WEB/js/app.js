@@ -1,6 +1,6 @@
 import { el, mount } from "./ui.js";
 import { iconEl } from "./icons.js";
-import { flushSave } from "./engine/store.js";
+import { flushSave, exportState, importState, onStateChange } from "./engine/store.js";
 
 import * as menu from "./screens/menu.js";
 import * as wordReview from "./screens/word-review.js";
@@ -15,12 +15,16 @@ import * as placementResult from "./screens/placement-result.js";
 import * as addKnown from "./screens/add-known.js";
 import * as mimicryList from "./screens/mimicry-list.js";
 import * as mimicryText from "./screens/mimicry-text.js";
+import * as account from "./screens/account.js";
+
+window.__store = { exportState, importState, onStateChange, flushSave };
 
 const TABS = [
   { id: "menu", label: "Главная", icon: "home" },
-  { id: "placement-intro", label: "Тест", icon: "test" },
+  { id: "placement-intro", label: "Test", icon: "test" },
   { id: "achievements", label: "Достижения", icon: "medal" },
   { id: "stats", label: "Прогресс", icon: "tree" },
+  { id: "account", label: "Аккаунт", icon: "user" },
 ];
 
 const SCREENS = {
@@ -37,6 +41,7 @@ const SCREENS = {
   "mimicry-list": mimicryList,
   "mimicry-text": mimicryText,
   "add-known": addKnown,
+  account,
 };
 
 const root = document.getElementById("app");
@@ -83,6 +88,7 @@ function render() {
   if (view.wide) innerClasses.push("screen-inner-wide");
   if (view.serif) innerClasses.push("screen-inner-serif");
   if (view.pinkTheme) innerClasses.push("screen-inner-pink");
+  if (view.pinkBack) innerClasses.push("screen-inner-pink-back");
 
   const screenEl = el("div", { class: "screen" }, [
     el("div", { class: innerClasses.join(" ") }, [
@@ -139,13 +145,14 @@ const SECTION_OF = {
   "topic-detail": "home",
   "word-review": "home",
   "phrase-review": "home",
-  "mimicry-list": "menu",
-  "mimicry-text": "menu",
+  "mimicry-list": "mimicry",
+  "mimicry-text": "mimicry",
   "placement-intro": "placement-intro",
   "placement-quiz": "placement-intro",
   "placement-result": "placement-intro",
   achievements: "achievements",
   stats: "stats",
+  account: "account",
 };
 
 window.addEventListener("beforeunload", flushSave);
