@@ -1,6 +1,7 @@
 import { el } from "./ui.js";
 import { iconEl } from "./icons.js";
 import { setStarred } from "./engine/store.js";
+import { CATEGORY_ES } from "./categories.js";
 
 export function wordRow(word, { showCategory = false } = {}) {
   const starIcon = () => iconEl(word.starred ? "star-filled" : "star-outline", { size: 18 });
@@ -19,7 +20,7 @@ export function wordRow(word, { showCategory = false } = {}) {
     wordLine.appendChild(iconEl("check-circle", { size: 15, color: "var(--success)" }));
   }
 
-  const subLine = showCategory ? `${word.translation_ru} · ${word.category}` : word.translation_ru;
+  const subLine = showCategory ? `${word.translation_ru} · ${CATEGORY_ES[word.category] || word.category}` : word.translation_ru;
 
   return el("div", { class: "word-row" }, [
     starBtn,
