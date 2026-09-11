@@ -5,13 +5,29 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>Spanish</title>
   <meta name="theme-color" content="#0a0f1e" />
+
+  <!-- PWA / установка на телефон -->
+  <link rel="manifest" href="manifest.json?v=20260911f" />
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Испанский" />
+
   <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Lora:wght@400;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/theme.css?v=20260911b" />
-  <link rel="stylesheet" href="css/components.css?v=20260911b" />
+  <link rel="stylesheet" href="css/theme.css?v=20260911f" />
+  <link rel="stylesheet" href="css/components.css?v=20260911f" />
 </head>
 <body>
   <div id="app"></div>
-  <script src="js/bundle.js?v=20260911b"></script>
+  <script src="js/bundle.js?v=20260911f"></script>
+  <script type="module" src="js/firebase-bridge.js?v=20260911f"></script>
+  <script>
+    if ("serviceWorker" in navigator) {
+      window.addEventListener("load", () => {
+        navigator.serviceWorker.register("sw.js?v=20260911f").catch((e) => console.warn("sw register failed", e));
+      });
+    }
+  </script>
 </body>
 </html>
